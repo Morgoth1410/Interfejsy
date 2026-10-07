@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Pożyczalnia sąsiedzka – szkic</title>
+<style>
+:root{--bg:#f6f7f9;--card:#fff;--tx:#1d2330;--mut:#667085;--ac:#2f6fed;--acx:#fff;--bd:#dde1e8;--ok:#16794c;--warn:#b45309;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#14171c;--card:#1d222b;--tx:#e8ebf0;--mut:#9aa3b2;--ac:#6b9bff;--acx:#0b1220;--bd:#313846;--ok:#4cc38a;--warn:#f0b35a}}
+:root[data-theme="dark"]{--bg:#14171c;--card:#1d222b;--tx:#e8ebf0;--mut:#9aa3b2;--ac:#6b9bff;--acx:#0b1220;--bd:#313846;--ok:#4cc38a;--warn:#f0b35a}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--tx);font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;line-height:1.45}
+header{background:var(--card);border-bottom:1px solid var(--bd);padding:12px 16px;position:sticky;top:env(safe-area-inset-top,0px);z-index:5}
+h1{font-size:1.15rem;margin:0 0 8px}
+nav{display:flex;gap:6px;flex-wrap:wrap}
+nav button{flex:1;min-width:100px}
+main{max-width:720px;margin:0 auto;padding:16px}
+h2{font-size:1.05rem;margin:20px 0 8px}
+button{font:inherit;padding:8px 12px;border:1px solid var(--bd);background:var(--card);color:var(--tx);border-radius:8px;cursor:pointer}
+button.pri,nav button.on{background:var(--ac);color:var(--acx);border-color:var(--ac)}
+input,select,textarea{font:inherit;width:100%;padding:8px;border:1px solid var(--bd);border-radius:8px;background:var(--card);color:var(--tx)}
+label{display:block;margin:10px 0 4px;font-weight:600;font-size:.92rem}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.row>*{flex:1}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:12px;margin:8px 0}
+.card h3{margin:0 0 2px;font-size:1rem}
+.mut{color:var(--mut);font-size:.9rem}
+.tag{display:inline-block;font-size:.8rem;padding:2px 8px;border-radius:99px;border:1px solid var(--bd);margin-right:4px}
+.ok{color:var(--ok);border-color:var(--ok)}
+.warn{color:var(--warn);border-color:var(--warn)}
+.acts{display:flex;gap:6px;margin-top:8px;flex-wrap:wrap}
+.check{display:flex;gap:6px;align-items:center;margin:8px 0;font-weight:400}
+.check input{width:auto}
+#toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(16px + env(safe-area-inset-bottom,0px));background:var(--tx);color:var(--bg);padding:10px 16px;border-radius:99px;display:none;max-width:90%}
+.view{display:none}.view.on{display:block}
+</style>
+</head>
+<body>
+<header>
+  <h1>🔧 Pożyczalnia sąsiedzka <span class="mut">(szkic)</span></h1>
+  <nav>
+    <button data-v="szukaj">Szukaj rzeczy</button>
+    <button data-v="dodaj">Dodaj rzecz</button>
+    <button data-v="moje">Moje pożyczenia <span id="badge"></span></button>
+  </nav>
+</header>
+<main>
+  <!-- Ekran 1: wyszukiwanie -->
+  <section id="szukaj" class="view">
+    <input id="q" placeholder="Czego szukasz? np. wiertarka, namiot…">
+    <div class="row" style="margin-top:8px">
+      <select id="kat"></select>
+      <label class="check"><input type="checkbox" id="tylkoDost"> tylko dostępne teraz</label>
+    </div>
+    <div id="lista"></div>
+  </section>
+
+  <!-- Ekran 2: szczegóły rzeczy + prośba o pożyczenie -->
+  <section id="szczegoly" class="view"></section>
+
+  <!-- Ekran 3: dodawanie własnej rzeczy -->
+  <section id="dodaj" class="view">
+    <h2>Udostępnij swoją rzecz</h2>
+    <label for="dn">Nazwa</label><input id="dn" placeholder="np. Drabina 3 m">
+    <label for="dk">Kategoria</label><select id="dkat"></select>
+    <label for="dd">Opis i zasady</label>
+    <textarea id="dd" rows="3" placeholder="Stan, instrukcja, na jak długo, komu pożyczasz…"></textarea>
+    <div class="acts"><button class="pri" id="dsave">Dodaj do pożyczalni</button></div>
+  </section>
+
+  <!-- Ekran 4: moje pożyczenia -->
+  <section id="moje" class="view"></section>
+</main>
+<div id="toast"></div>
+
+<script>
+// ---------- Dane (tylko w pamięci – po odświeżeniu wracają do stanu wyjściowego) ----------
+const ME = "Ty";
+const KATEGORIE = ["Narzędzia", "Sport i turystyka", "Gry", "Dom", "Elektronika"];
+const iso = d => d.toISOString().slice(0, 10);
+const plus = n => { const d = new Date(); d.setDate(d.getDate() + n); return iso(d); };
+let nextId = 100;
+
+const items = [
+  { id: 1, name: "Wiertarka udarowa", owner: "Marek", cat: "Narzędzia", desc: "Z kompletem wierteł. Proszę oddać czystą." },
+  { id: 2, name: "Namiot 3-osobowy", owner: ME, cat: "Sport i turystyka", desc: "Lekki, po jednym wyjeździe." },
+  { id: 3, name: "Gra planszowa Catan", owner: "Kasia", cat: "Gry", desc: "Komplet kart, bez dodatków." },
+  { id: 4, name: "Drabina 3 m", owner: "Ola", cat: "Narzędzia", desc: "Aluminiowa. Odbiór z garażu." },
+  { id: 5, name: "Projektor", owner: "Piotr", cat: "Elektronika", desc: "Z kablem HDMI i pilotem." }
+];
+// dir: "in" = ja pożyczam od kogoś, "out" = ktoś pożycza ode mnie, "other" = sprawy innych osób
+// status: "request" (prośba) | "active" (pożyczone) | "done" (zwrócone)
+const loans = [
+  { id: 1, item: 1, other: "Marek", dir: "in",    status: "active",  due: plus(3) },
+  { id: 2, item: 2, other: "Kasia", dir: "out",   status: "request", due: plus(10), msg: "Jadę na weekend w góry." },
+  { id: 3, item: 5, other: "Ania",  dir: "other", status: "active",  due: plus(5) }
+];
+
+const itemById = id => items.find(i => i.id === id);
+const busyLoan = id => loans.find(l => l.item === id && l.status === "active");
+function esc(s) {
+  return String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+const $ = id => document.getElementById(id);
+
+function toast(msg) {
+  const t = $("toast"); t.textContent = msg; t.style.display = "block";
+  clearTimeout(toast.h); toast.h = setTimeout(() => t.style.display = "none", 2500);
+}
+
+// ---------- Przełączanie ekranów ----------
+function show(view, arg) {
+  document.querySelectorAll(".view").forEach(v => v.classList.remove("on"));
+  $(view).classList.add("on");
+  document.querySelectorAll("nav button").forEach(b => b.classList.toggle("on", b.dataset.v === view || (view === "szczegoly" && b.dataset.v === "szukaj")));
+  if (view === "szukaj") renderList();
+  if (view === "szczegoly") renderDetail(arg);
+  if (view === "moje") renderMine();
+  updateBadge();
+  window.scrollTo(0, 0);
+}
+document.querySelectorAll("nav button").forEach(b => b.onclick = () => show(b.dataset.v));
+
+function updateBadge() {
+  const n = loans.filter(l => l.dir === "out" && l.status === "request").length;
+  $("badge").textContent = n ? "(" + n + ")" : "";
+}
+
+// ---------- Ekran: lista ----------
+function renderList() {
+  const q = $("q").value.trim().toLowerCase();
+  const kat = $("kat").value;
+  const tylko = $("tylkoDost").checked;
+  const wynik = items.filter(i =>
+    (!q || (i.name + " " + i.desc).toLowerCase().includes(q)) &&
+    (!kat || i.cat === kat) &&
+    (!tylko || !busyLoan(i.id)));
+  $("lista").innerHTML = wynik.length ? wynik.map(i => {
+    const b = busyLoan(i.id);
+    return `<div class="card">
+      <h3>${esc(i.name)}</h3>
+      <div class="mut">${esc(i.cat)} · właściciel: ${esc(i.owner)}</div>
+      <div style="margin-top:6px">${b ? `<span class="tag warn">Zajęte do ${b.due}</span>` : `<span class="tag ok">Dostępne</span>`}</div>
+      <div class="acts"><button onclick="show('szczegoly', ${i.id})">Szczegóły</button></div>
+    </div>`;
+  }).join("") : `<p class="mut">Nic nie znaleziono. Spróbuj innego słowa albo <a href="#" onclick="show('dodaj');return false">dodaj własną rzecz</a>.</p>`;
+}
+["q", "kat", "tylkoDost"].forEach(id => $(id).addEventListener("input", renderList));
+
+// ---------- Ekran: szczegóły + prośba ----------
+function renderDetail(id) {
+  const i = itemById(id), b = busyLoan(id);
+  const mine = i.owner === ME;
+  $("szczegoly").innerHTML = `
+    <p><button onclick="show('szukaj')">← Wróć do listy</button></p>
+    <div class="card">
+      <h3>${esc(i.name)}</h3>
+      <div class="mut">${esc(i.cat)} · właściciel: ${esc(i.owner)}</div>
+      <p>${esc(i.desc)}</p>
+      ${b ? `<span class="tag warn">Zajęte do ${b.due}</span>` : `<span class="tag ok">Dostępne</span>`}
+    </div>
+    ${mine ? `<p class="mut">To Twoja rzecz. Prośby o nią zobaczysz w „Moje pożyczenia”.</p>` : `
+    <h2>Poproś o pożyczenie</h2>
+    ${b ? `<p class="mut">Rzecz jest teraz zajęta, ale możesz poprosić o termin po ${b.due}.</p>` : ""}
+    <label for="pdo">Potrzebuję do</label>
+    <input type="date" id="pdo" min="${iso(new Date())}" value="${plus(b ? 14 : 3)}">
+    <label for="pmsg">Wiadomość do właściciela (opcjonalnie)</label>
+    <textarea id="pmsg" rows="2" placeholder="Do czego potrzebujesz? Kiedy możesz odebrać?"></textarea>
+    <div class="acts"><button class="pri" onclick="sendRequest(${i.id})">Wyślij prośbę</button></div>`}`;
+}
+function sendRequest(id) {
+  const i = itemById(id);
+  loans.push({ id: nextId++, item: id, other: i.owner, dir: "in", status: "request", due: $("pdo").value, msg: $("pmsg").value });
+  toast("Prośba wysłana do: " + i.owner);
+  show("moje");
+}
+
+// ---------- Ekran: dodawanie ----------
+$("dsave").onclick = () => {
+  const name = $("dn").value.trim();
+  if (!name) { toast("Wpisz nazwę rzeczy"); $("dn").focus(); return; }
+  items.push({ id: nextId++, name, owner: ME, cat: $("dkat").value, desc: $("dd").value.trim() || "(bez opisu)" });
+  $("dn").value = ""; $("dd").value = "";
+  toast("Dodano: " + name);
+  show("szukaj");
+};
+
+// ---------- Ekran: moje pożyczenia ----------
+function loanCard(l, buttons) {
+  const i = itemById(l.item);
+  const late = l.status === "active" && l.due < iso(new Date());
+  return `<div class="card">
+    <h3>${esc(i.name)}</h3>
+    <div class="mut">${l.dir === "in" ? "od: " : "dla: "}${esc(l.other)} · do ${esc(l.due)}
+      ${late ? '<span class="tag warn">po terminie</span>' : ""}</div>
+    ${l.msg ? `<div class="mut">„${esc(l.msg)}”</div>` : ""}
+    <div class="acts">${buttons}</div>
+  </div>`;
+}
+function renderMine() {
+  const sek = (tytul, lista, fn, pusto) =>
+    `<h2>${tytul}</h2>` + (lista.length ? lista.map(fn).join("") : `<p class="mut">${pusto}</p>`);
+  const get = (dir, st) => loans.filter(l => l.dir === dir && l.status === st);
+  $("moje").innerHTML =
+    sek("Prośby do mnie", get("out", "request"),
+      l => loanCard(l, `<button class="pri" onclick="decide(${l.id}, true)">Zaakceptuj</button><button onclick="decide(${l.id}, false)">Odrzuć</button>`),
+      "Nikt o nic nie prosi.") +
+    sek("Pożyczone przeze mnie od innych", get("in", "active"),
+      l => loanCard(l, `<button onclick="extend(${l.id})">Przedłuż o 7 dni</button><button class="pri" onclick="finish(${l.id})">Oddałem</button>`),
+      "Nic teraz nie pożyczasz.") +
+    sek("Pożyczone przez innych ode mnie", get("out", "active"),
+      l => loanCard(l, `<button class="pri" onclick="finish(${l.id})">Odzyskałem</button>`),
+      "Nikt nie ma teraz Twoich rzeczy.") +
+    sek("Moje prośby (czekam na odpowiedź)", get("in", "request"),
+      l => loanCard(l, `<button onclick="cancelReq(${l.id})">Anuluj prośbę</button>`),
+      "Brak oczekujących próśb.");
+}
+function decide(id, ok) {
+  const l = loans.find(x => x.id === id);
+  if (ok) {
+    const b = busyLoan(l.item);
+    if (b) { toast("Ta rzecz jest już pożyczona – najpierw ją odzyskaj"); return; }
+    l.status = "active"; toast("Zaakceptowano prośbę: " + l.other);
+  } else { loans.splice(loans.indexOf(l), 1); toast("Odrzucono prośbę"); }
+  renderMine(); updateBadge();
+}
+function extend(id) {
+  const l = loans.find(x => x.id === id);
+  const d = new Date(l.due); d.setDate(d.getDate() + 7); l.due = iso(d);
+  toast("Nowy termin zwrotu: " + l.due); renderMine();
+}
+function finish(id) {
+  loans.find(x => x.id === id).status = "done";
+  toast("Oznaczono jako zwrócone"); renderMine();
+}
+function cancelReq(id) {
+  loans.splice(loans.findIndex(x => x.id === id), 1);
+  toast("Prośba anulowana"); renderMine();
+}
+
+// ---------- Start ----------
+$("kat").innerHTML = '<option value="">Wszystkie kategorie</option>' + KATEGORIE.map(k => `<option>${k}</option>`).join("");
+$("dkat").innerHTML = KATEGORIE.map(k => `<option>${k}</option>`).join("");
+show("szukaj");
+</script>
+</body>
+</html>
